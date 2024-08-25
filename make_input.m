@@ -11,6 +11,10 @@ function [h, r, epsilon] = make_input(points, connection_probability)
 
     for i = 1:n
         for j = 1:n
+            if i == j
+                continue
+            end
+
             if rand <= connection_probability
                 % 점 i와 j 사이의 거리를 계산하여 r에 저장
                 distance = sqrt(sum((points(i, :) - points(j, :) ).^2));
@@ -22,6 +26,6 @@ function [h, r, epsilon] = make_input(points, connection_probability)
         end
     end
 
-    h = h + normrnd(0, 0.01, size(h));
-    r = r + normrnd(0, 0.01, size(r));
+    h = h + normrnd(0, 5, size(h));
+    r = r + normrnd(0, 0.001, size(r));
 end

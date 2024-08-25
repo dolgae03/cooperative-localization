@@ -1,4 +1,4 @@
-function u_final = iterative_localization(h, r, epsilon, gamma_initial, D, delta)
+function u_final = iterative_localization(h, r, epsilon, gamma_initial, D, delta, Q1, Q2)
     % h: Initial estimates of the positions.
     % r: Initial estimates of the range.
     % rij: Matrix of range measurements between points.
@@ -8,43 +8,54 @@ function u_final = iterative_localization(h, r, epsilon, gamma_initial, D, delta
     % D: Prior error range of the GNSS information.
     % delta: Convergence tolerance.
     % max_iterations: Maximum number of iterations.
-    
+
+
     %% Step 1: Initalize value
     % Initialize variables
     k = 0;
-    u_hat_k_1 = [h', r']; % Initial u_k = [h', r']'
+    u_hat_k_1 = [h', r']'; % Initial u_k = [h', r']'
     gamma_k = gamma_initial;
-    C = get_C_matrix(length(h), length(r), epsilon)
+    b = [h', r']';
+    n = height(h) / 2;
+    m = height(r);
+    C = [inv(Q1) zeros(2*n,m);
+         zeros(m,2*n) inv(Q2)];
+    
     
     while true
         %% Step 2: Update Ak-1 and Pk-1
 
         k = k + 1;
-        A_k_1 = update_A(u_hat_k_1, C, epsilon);
-        P_k_1 = eye(size(A_k_1)) - A_k_1' * inv(A_k_1 * A_k_1') * A_k_1;
+        A_k_1 = update_A(n, m, u_hat_k_1, epsilon);
+        P_k_1 = eye(size(A_k_1, 2)) - A_k_1' * inv(A_k_1 * A_k_1') * A_k_1;
         
         %% Step 3: Solve the approximate problem
-        u_bar_k_1 = pinv(P_k_1 * C * P_k_1) * C * [h', r'];
-        
+        u_bar_k_1 = pinv(P_k_1 * C * P_k_1) * C * b;
+
+
         while true
             %% Step 4: Calculate the update of the kth iteration
             u_hat_k = u_hat_k_1 + gamma_k * (u_bar_k_1 - u_hat_k_1);
             
             %% Step 5: Inspection step I
             x_estimated = u_hat_k(1:length(h))';
-            if max(vecnorm(x_estimated - h, 2, 2)) > D
+            
+            diff_x = reshape(x_estimated' - h, [], 2);
+            % max(vecnorm(diff_x, 2, 2))
+            if max(vecnorm(diff_x, 2, 2)) > D
                 gamma_k = gamma_k / 2;
                 continue; % go to Step 4
             end
             
             %% Step 6: Correction step
-            u_hat_k(length(h)+1:end) = correct_d(x_estimated, epsilon);
+            new_d = correct_d(x_estimated, epsilon)';
+            u_hat_k(length(h)+1:end) = new_d;
             
             %% Step 7: Inspection step II
-            objective_k = u_hat_k' * C * u_hat_k - 2 * b' * C * u_hat_k;
-            objective_k_minus_1 = u_k_minus_1_star' * C * u_k_minus_1_star - 2 * b' * C * u_k_minus_1_star;
-            if objective_k >= objective_k_minus_1
-                gamma_k_minus_1 = gamma_k_minus_1 / 2;
+            objective_k = u_hat_k' * C * u_hat_k - 2 * b' * C * u_hat_k
+            objective_k_1 = u_hat_k_1' * C * u_hat_k_1 - 2 * b' * C * u_hat_k_1
+            if objective_k > objective_k_1
+                gamma_k = gamma_k / 2;
                 continue; % go to Step 4
             end
 
@@ -61,48 +72,42 @@ function u_final = iterative_localization(h, r, epsilon, gamma_initial, D, delta
     
 end
 
-function C = get_C_matrix(n, m, epsilon)
+function C = get_C_matrix(n, m, i, j, epsilon)
     % epsilon is size x 2 matrix describe edge between,.
     % Update A_k_minus_1 based on the definitions provided.
     C = zeros(2*n + m, 2*n + m);
-    
-    for idx = 1:height(epsilon)
-        i = epsilon(idx, 1)
-        j = epsilon(idx, 2)
 
-        C(2*i-1:2*i, 2*i-1:2*i) = eye(2);
-        C(2*j-1:2*j, 2*j-1:2*j) = eye(2);
-        C(2*i-1:2*i, 2*j-1:2*j) = -eye(2);
-        C(2*j-1:2*j, 2*i-1:2*i) = -eye(2);
+    C(2*i-1:2*i, 2*i-1:2*i) = eye(2);
+    C(2*j-1:2*j, 2*j-1:2*j) = eye(2);
+    C(2*i-1:2*i, 2*j-1:2*j) = -eye(2);
+    C(2*j-1:2*j, 2*i-1:2*i) = -eye(2);
+   
+    sum_nl = sum(epsilon(:, 1) < i)
 
-        sum_nl = sum(epsilon(:, 1) < i);
-
-        C(2*n + sum_nl + j, 2*n + sum_nl + j) = -1;
-    end
+    C(2*n + sum_nl + j, 2*n + sum_nl + j) = -1;
 end
 
 
-function A_k = update_A(u_k, C, epsilon)
-    A_k = zeros(height(epsilon), width(u_k));
+function A_k = update_A(n, m, u_k, epsilon)
+    A_k = zeros(height(epsilon), height(u_k));
     
 
     for idx = 1:height(epsilon)
         i = epsilon(idx, 1);
         j = epsilon(idx, 2);
         
-        size(A_k)
-        size(u_k')
-        size(C(i,j))
-        A_k(:, idx) = u_k' * C(i, j);
+        Cij = get_C_matrix(n, m, i, j, epsilon);
+
+        A_k(idx, :) = u_k' * Cij;
     end
 end
 
 function d = correct_d(x_estimated, epsilon)
-    d = zeros(height(epsilon), 1)
+    d = zeros(height(epsilon), 1);
     for idx=1:height(epsilon)
         i = epsilon(idx, 1);
         j = epsilon(idx, 2);
 
-        d(1, idx) = norm(x_estimated(i) - vecnorm(j));
+        d(idx, 1) = norm(x_estimated(2*i-1 : 2*i) - x_estimated(2*j-1 : 2*j));
     end
 end
