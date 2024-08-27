@@ -23,4 +23,8 @@ Q2 = (0.001).^2 * eye(m)
 
 
 %% Run Algorithm
-iterative_localization(h, r, epsion, gamma, D, delta, Q1, Q2);
+[h_final, r_final] = iterative_localization(h, r, epsion, gamma, D, delta, Q1, Q2);
+
+
+point_bef = reshape(h, 2, [])'
+point_aft = reshape(h_final,2, [])'

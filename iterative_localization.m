@@ -1,4 +1,4 @@
-function u_final = iterative_localization(h, r, epsilon, gamma_initial, D, delta, Q1, Q2)
+function [h_final, r_final] = iterative_localization(h, r, epsilon, gamma_initial, D, delta, Q1, Q2)
     % h: Initial estimates of the positions.
     % r: Initial estimates of the range.
     % rij: Matrix of range measurements between points.
@@ -14,7 +14,7 @@ function u_final = iterative_localization(h, r, epsilon, gamma_initial, D, delta
     % Initialize variables
     k = 0;
     u_hat_k_1 = [h', r']'; % Initial u_k = [h', r']'
-    gamma_k = gamma_initial;
+    
     b = [h', r']';
     n = height(h) / 2;
     m = height(r);
@@ -24,7 +24,7 @@ function u_final = iterative_localization(h, r, epsilon, gamma_initial, D, delta
     
     while true
         %% Step 2: Update Ak-1 and Pk-1
-
+        gamma_k = gamma_initial;
         k = k + 1;
         A_k_1 = update_A(n, m, u_hat_k_1, epsilon);
         P_k_1 = eye(size(A_k_1, 2)) - A_k_1' * inv(A_k_1 * A_k_1') * A_k_1;
@@ -33,7 +33,7 @@ function u_final = iterative_localization(h, r, epsilon, gamma_initial, D, delta
         u_bar_k_1 = pinv(P_k_1 * C * P_k_1) * C * b;
 
 
-        while true
+        for threshold = 1:15
             %% Step 4: Calculate the update of the kth iteration
             u_hat_k = u_hat_k_1 + gamma_k * (u_bar_k_1 - u_hat_k_1);
             
@@ -52,8 +52,8 @@ function u_final = iterative_localization(h, r, epsilon, gamma_initial, D, delta
             u_hat_k(length(h)+1:end) = new_d;
             
             %% Step 7: Inspection step II
-            objective_k = u_hat_k' * C * u_hat_k - 2 * b' * C * u_hat_k
-            objective_k_1 = u_hat_k_1' * C * u_hat_k_1 - 2 * b' * C * u_hat_k_1
+            objective_k = u_hat_k' * C * u_hat_k - 2 * b' * C * u_hat_k;
+            objective_k_1 = u_hat_k_1' * C * u_hat_k_1 - 2 * b' * C * u_hat_k_1;
             if objective_k > objective_k_1
                 gamma_k = gamma_k / 2;
                 continue; % go to Step 4
@@ -63,13 +63,18 @@ function u_final = iterative_localization(h, r, epsilon, gamma_initial, D, delta
         end
   
         %% Step 8: Convergence check
-        if norm(u_hat_k - u_hat_k_1) / norm(u_hat_k) <= delta
+        relative_error = norm(u_hat_k - u_hat_k_1) / norm(u_hat_k);
+        if relative_error <= delta
             break;
         end
+
+        u_hat_k_1 = u_hat_k;
     end
     
     u_final = u_hat_k; % Final output
-    
+
+    h_final = u_hat_k(1:length(h));
+    r_final = u_hat_k(length(h)+1:end);
 end
 
 function C = get_C_matrix(n, m, i, j, epsilon)
@@ -82,7 +87,7 @@ function C = get_C_matrix(n, m, i, j, epsilon)
     C(2*i-1:2*i, 2*j-1:2*j) = -eye(2);
     C(2*j-1:2*j, 2*i-1:2*i) = -eye(2);
    
-    sum_nl = sum(epsilon(:, 1) < i)
+    sum_nl = sum(epsilon(:, 1) < i);
 
     C(2*n + sum_nl + j, 2*n + sum_nl + j) = -1;
 end
